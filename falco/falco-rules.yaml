@@ -1,0 +1,105 @@
+# Custom Falco rules for production Kubernetes security monitoring
+# Install: helm install falco falcosecurity/falco --namespace falco --create-namespace
+
+- rule: Shell Spawned in Container
+  desc: A shell was spawned inside a running container — potential attacker pivoting
+  condition: >
+    spawned_process and container and
+    (proc.name in (shell_binaries)) and
+    not proc.pname in (shell_binaries) and
+    not container.image.repository in (trusted_images)
+  output: >
+    Shell spawned in container (user=%user.name user_loginuid=%user.loginuid %container.info
+    shell=%proc.name parent=%proc.pname cmdline=%proc.cmdline pid=%proc.pid
+    image=%container.image.repository:%container.image.tag)
+  priority: CRITICAL
+  tags: [container, shell, runtime-security]
+
+- rule: Outbound Connection to Suspicious IP
+  desc: A container made an unexpected outbound network connection
+  condition: >
+    outbound and container and
+    not fd.sip in (allowed_outbound_ips) and
+    not fd.sport in (allowed_outbound_ports)
+  output: >
+    Unexpected outbound connection from container (user=%user.name %container.info
+    connection=%fd.name image=%container.image.repository)
+  priority: WARNING
+  tags: [network, container, runtime-security]
+
+- rule: Sensitive File Read in Container
+  desc: A container read a sensitive system file
+  condition: >
+    open_read and container and
+    fd.name in (/etc/shadow, /etc/passwd, /etc/sudoers, /root/.ssh/id_rsa,
+                /root/.aws/credentials, /proc/sysrq-trigger) and
+    not proc.name in (allowed_file_readers)
+  output: >
+    Sensitive file read in container (user=%user.name user_loginuid=%user.loginuid
+    %container.info file=%fd.name image=%container.image.repository)
+  priority: HIGH
+  tags: [container, filesystem, runtime-security]
+
+- rule: Privilege Escalation Attempt
+  desc: A process attempted to escalate privileges inside a container
+  condition: >
+    spawned_process and container and
+    proc.name in (su, sudo, newgrp) and
+    not container.image.repository in (trusted_images)
+  output: >
+    Privilege escalation attempt in container (user=%user.name %container.info
+    proc=%proc.name parent=%proc.pname image=%container.image.repository)
+  priority: CRITICAL
+  tags: [container, privilege-escalation, runtime-security]
+
+- rule: Container Running as Root
+  desc: A container is running as the root user
+  condition: >
+    container_started and container and
+    container.privileged=false and
+    user.uid=0 and
+    not container.image.repository in (trusted_root_images)
+  output: >
+    Container running as root (user=%user.name %container.info
+    image=%container.image.repository)
+  priority: WARNING
+  tags: [container, user, runtime-security]
+
+- rule: K8s Secret Access from Container
+  desc: A container directly accessed Kubernetes secrets via the API
+  condition: >
+    ka.target.resource=secrets and
+    ka.verb in (get, list, watch) and
+    ka.user.name != "system:serviceaccount:kube-system:default"
+  output: >
+    K8s secret accessed from container (user=%ka.user.name verb=%ka.verb
+    secret=%ka.target.name namespace=%ka.target.namespace)
+  priority: HIGH
+  source: k8s_audit
+  tags: [k8s, secrets, runtime-security]
+
+# Macros
+- macro: shell_binaries
+  condition: (proc.name in (bash, sh, zsh, dash, ksh, tcsh, csh))
+
+- macro: trusted_images
+  condition: (container.image.repository in (
+    "prom/prometheus",
+    "grafana/grafana",
+    "YOUR_DOCKERHUB_USERNAME/python-devops-app"
+  ))
+
+- macro: allowed_outbound_ips
+  condition: (fd.sip startswith "10." or fd.sip startswith "172.16." or fd.sip startswith "192.168.")
+
+- macro: allowed_outbound_ports
+  condition: (fd.sport in (53, 443, 80))
+
+- macro: allowed_file_readers
+  condition: (proc.name in (prometheus, node_exporter))
+
+- macro: trusted_root_images
+  condition: (container.image.repository in (
+    "prom/node-exporter",
+    "registry.k8s.io/kube-proxy"
+  ))

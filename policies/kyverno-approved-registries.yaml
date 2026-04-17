@@ -1,0 +1,36 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Only images from approved registries are permitted in production.
+      This prevents supply-chain attacks via unvetted images.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-approved-registries
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [production, staging]
+      validate:
+        message: "Images must come from approved registries: docker.io/YOUR_ORG, YOUR_AWS_ACCOUNT.dkr.ecr.ap-south-1.amazonaws.com, registry.k8s.io"
+        foreach:
+          - list: "request.object.spec.containers"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.image }}"
+                    operator: NotContains
+                    value: "docker.io/YOUR_ORG"
+                  - key: "{{ element.image }}"
+                    operator: NotContains
+                    value: "YOUR_AWS_ACCOUNT.dkr.ecr.ap-south-1.amazonaws.com"
+                  - key: "{{ element.image }}"
+                    operator: NotContains
+                    value: "registry.k8s.io"

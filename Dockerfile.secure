@@ -1,0 +1,43 @@
+# Stage 1: Build dependencies
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# Install dependencies in a separate layer for caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Stage 2: Final minimal image
+# Using slim instead of distroless for Flask compatibility
+FROM python:3.11-slim AS final
+
+# Security: create non-root user
+RUN groupadd -r appgroup && useradd -r -g appgroup -u 1000 appuser
+
+WORKDIR /app
+
+# Copy installed packages from builder stage (no build tools in final image)
+COPY --from=builder /root/.local /home/appuser/.local
+
+# Copy only application code (no test files, no .git)
+COPY --chown=appuser:appgroup app.py .
+
+# Security hardening
+ENV PATH=/home/appuser/.local/bin:$PATH
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV FLASK_ENV=production
+
+# Expose only the application port
+EXPOSE 5000
+
+# Run as non-root user
+USER appuser
+
+# Use exec form to handle signals properly
+CMD ["python", "app.py"]
+
+# Security labels
+LABEL maintainer="devops@yourcompany.com"
+LABEL org.opencontainers.image.source="https://github.com/YOUR_ORG/app-source"
+LABEL org.opencontainers.image.description="Python Flask DevOps App"

@@ -1,0 +1,32 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/description: >-
+      Privileged containers have full access to the host. They must never
+      run in production. Also blocks hostNetwork and hostPID.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-not-privileged
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [production, staging]
+      validate:
+        message: "Privileged containers are not allowed in production."
+        pattern:
+          spec:
+            =(hostNetwork): false
+            =(hostPID): false
+            =(hostIPC): false
+            containers:
+              - =(securityContext):
+                  =(privileged): false
+                  =(capabilities):
+                    =(add): "!SYS_ADMIN&!NET_ADMIN&!SYS_PTRACE"
