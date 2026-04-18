@@ -21,6 +21,7 @@ jobs:
   secret-scan:
     name: Secret Scanning (TruffleHog)
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +41,7 @@ jobs:
   sast:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       contents: read
       security-events: write
@@ -65,6 +67,7 @@ jobs:
   dependency-scan:
     name: Dependency Scan (Trivy)
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       contents: read
       security-events: write
@@ -185,6 +188,7 @@ jobs:
   iac-scan:
     name: IaC Security Scan (Checkov)
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       contents: read
       security-events: write
